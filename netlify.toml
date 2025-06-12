@@ -1,6 +1,7 @@
 [build]
   command   = "npm run build"
-  publish   = "dist"
+  publish   = "."                         # ipv "dist"
+  functions = "netlify/functions"
 
 [functions]
   directory = "netlify/functions"
