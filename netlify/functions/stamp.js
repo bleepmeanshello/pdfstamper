@@ -1,3 +1,4 @@
+const fetch = require('node-fetch');
 const { PDFDocument, StandardFonts } = require('pdf-lib');
 
 function createErrorResponse(statusCode, message) {
@@ -51,6 +52,7 @@ function parsePages(str) {
 
 exports.handler = async function(event) {
   let body;
+  console.log('Incoming event.body:', event.body);
   try {
     body = JSON.parse(event.body);
   } catch {
@@ -75,6 +77,8 @@ exports.handler = async function(event) {
     return createErrorResponse(400, err.message);
   }
 
+  console.log('Parsed pageNumbers:', pageNumbers);
+
   try {
     const response = await fetch(pdfUrl);
     if (!response.ok) {
@@ -84,6 +88,7 @@ exports.handler = async function(event) {
     const pdfBytes = await response.arrayBuffer();
     const pdfDoc = await PDFDocument.load(pdfBytes);
     const allPages = pdfDoc.getPages();
+    console.log('PDF loaded, total pages =', allPages.length);
 
     // Valideer paginanummers
     const validationError = validatePageNumbers(pageNumbers, allPages.length);
