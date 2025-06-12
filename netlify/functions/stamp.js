@@ -1,39 +1,37 @@
-const fetch = global.fetch || require('node-fetch');
 const { PDFDocument, StandardFonts } = require('pdf-lib');
 
-// Parse a string like "2-5,8,10-12" into an array of page numbers
 function parsePages(str) {
   const pages = new Set();
-  // split on commas
-  for (const part of str.split(',')) {
-    const trimmed = part.trim();
-    const rangeMatch = trimmed.match(/^(\d+)-(\d+)$/);
+  str.split(',').forEach(part => {
+    const rangeMatch = part.match(/^(\d+)\s*-\s*(\d+)$/);
     if (rangeMatch) {
-      const start = Number(rangeMatch[1]);
-      const end = Number(rangeMatch[2]);
+      const start = parseInt(rangeMatch[1], 10);
+      const end = parseInt(rangeMatch[2], 10);
       if (start < 1 || end < start) {
-        throw new Error(`Invalid page range: "${trimmed}"`);
+        throw new Error(`Invalid page range: "${part}"`);
       }
-      for (let i = start; i <= end; i++) pages.add(i);
+      for (let i = start; i <= end; i++) {
+        pages.add(i);
+      }
     } else {
-      const num = Number(trimmed);
-      if (!Number.isInteger(num) || num < 1) {
-        throw new Error(`Invalid page number: "${trimmed}"`);
+      const num = parseInt(part, 10);
+      if (isNaN(num) || num < 1) {
+        throw new Error(`Invalid page number: "${part}"`);
       }
       pages.add(num);
     }
-  }
+  });
   return Array.from(pages).sort((a, b) => a - b);
 }
 
-exports.handler = async function (event) {
+exports.handler = async function(event) {
   let body;
   try {
     body = JSON.parse(event.body);
   } catch {
     return {
       statusCode: 400,
-      body: JSON.stringify({ error: 'Invalid JSON payload' }),
+      body: JSON.stringify({ error: 'Invalid JSON payload' })
     };
   }
 
@@ -60,13 +58,13 @@ exports.handler = async function (event) {
     if (!response.ok) {
       throw new Error(`Failed to download PDF (status ${response.status})`);
     }
-    const arrayBuffer = await response.arrayBuffer();
-    const pdfDoc = await PDFDocument.load(arrayBuffer);
+    const pdfBytes = await response.arrayBuffer();
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+    const allPages = pdfDoc.getPages();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-    const allPages = pdfDoc.getPages();
-    for (const num of pageNumbers) {
-      if (num > allPages.length) {
+    pageNumbers.forEach(num => {
+      if (num < 1 || num > allPages.length) {
         throw new Error(`Page number out of range: ${num}`);
       }
       const page = allPages[num - 1];
@@ -74,17 +72,21 @@ exports.handler = async function (event) {
         x: 50,
         y: page.getHeight() - 50,
         size: 12,
-        font,
+        font
       });
-    }
+    });
 
-    const modifiedBytes = await pdfDoc.save();
+    const modifiedPdfBytes = await pdfDoc.save();
+    const pdfBase64 = Buffer.from(modifiedPdfBytes).toString('base64');
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pdfBase64: Buffer.from(modifiedBytes).toString('base64') }),
+      body: JSON.stringify({ pdfBase64 })
     };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: err.message })
+    };
   }
 };
