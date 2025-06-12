@@ -1,11 +1,13 @@
 {
   "name": "pdfstamper",
   "version": "1.0.0",
-  "private": true,
+  "main": "netlify/functions/stamp.js",
   "scripts": {
-    "build": "echo \"No build step required\""
+    "build": "echo \"No build step needed\"",
+    "start": "netlify dev"
   },
   "dependencies": {
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "googleapis": "^113.0.0"
   }
 }
