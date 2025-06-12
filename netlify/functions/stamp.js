@@ -3,41 +3,33 @@ import { PDFDocument, StandardFonts } from 'pdf-lib';
 
 export const handler = async (event) => {
     try {
-        // 1) Pak pdfUrl, text en pages uit het request-body
+        // 1) payload uitlezen
         const { pdfUrl, text, pages } = JSON.parse(event.body || '{}');
         if (!pdfUrl) throw new Error('`pdfUrl` ontbreekt in de payload');
         if (!pages)  throw new Error('`pages` ontbreekt in de payload');
 
-        // 2) Haal de PDF op
+        // 2) PDF ophalen
         const res = await fetch(pdfUrl);
         if (!res.ok) throw new Error(`Kan PDF niet ophalen (status ${res.status})`);
         const arrayBuffer = await res.arrayBuffer();
-        const pdfBytes = Buffer.from(arrayBuffer);
 
-        // 3) Laad de PDF in pdf-lib
-        const pdfDoc = await PDFDocument.load(pdfBytes);
+        // 3) PDF laden en font embedden
+        const pdfDoc = await PDFDocument.load(arrayBuffer);
+        const font   = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-        // 4) Embed een font
-        const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-
-        // 5) Split op komma’s en parse elke “a-b” range
+        // 4) pagina-ranges parsen
         const ranges    = pages.split(',').map(r => r.trim());
         const pageCount = pdfDoc.getPageCount();
 
-        // 6) Voor elke range: stempel de tekst op de juiste pagina's
+        // 5) tekst stempelen
         for (const range of ranges) {
-            // range als '2-5' of '7'
             let [a, b] = range.split('-').map(n => parseInt(n, 10) - 1);
-            if (isNaN(a)) continue;      // skip lege of ongeldige stukken
-            if (b === undefined) b = a; // één pagina
-
-            // skip ranges buiten het document
+            if (isNaN(a)) continue;
+            if (b === undefined) b = a;
             if (a < 0 || b < 0 || a >= pageCount || b >= pageCount) {
                 console.warn(`Overslaan: pagina-range "${range}" ligt buiten 1–${pageCount}`);
                 continue;
             }
-
-            // stempel de tekst op alle pagina's in deze range
             for (let i = a; i <= b; i++) {
                 const page = pdfDoc.getPage(i);
                 page.drawText(text, {
@@ -49,18 +41,19 @@ export const handler = async (event) => {
             }
         }
 
-        // 7) Sla de gewijzigde PDF op en geef hem als Base64 terug
+        // 6) gewijzigde PDF serializen
         const modifiedPdf = await pdfDoc.save();
-        const modifiedB64 = Buffer.from(modifiedPdf).toString('base64');
+        const pdfBase64   = Buffer.from(modifiedPdf).toString('base64');
 
+        // 7) return Base64
         return {
             statusCode: 200,
-            body: JSON.stringify({ pdfBase64: modifiedB64 }),
+            body: JSON.stringify({ pdfBase64 }),
         };
 
     } catch (err) {
         return {
-            statusCode: 500,
+            statusCode: err.message.startsWith('`') ? 400 : 500,
             body: JSON.stringify({ error: err.message }),
         };
     }

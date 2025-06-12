@@ -1,16 +1,10 @@
 {
   "name": "pdfstamper",
   "version": "1.0.0",
-  "type": "module",
+  "private": true,
   "scripts": {
-    "start": "netlify dev",
-    "build": "echo \"Nothing to build, skipping.\"",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "echo \"No build step required\""
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "dependencies": {
     "pdf-lib": "^1.17.1"
   }
