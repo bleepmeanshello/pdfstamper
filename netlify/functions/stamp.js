@@ -1,4 +1,4 @@
-const fetch = require('node-fetch');
+const fetch = globalThis.fetch;
 const { PDFDocument, StandardFonts } = require('pdf-lib');
 
 function createErrorResponse(statusCode, message) {
