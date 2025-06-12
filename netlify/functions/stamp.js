@@ -1,60 +1,92 @@
-// netlify/functions/stamp.js
-import { PDFDocument, StandardFonts } from 'pdf-lib';
+const { PDFDocument, StandardFonts } = require('pdf-lib');
 
-export const handler = async (event) => {
-    try {
-        // 1) payload uitlezen
-        const { pdfUrl, text, pages } = JSON.parse(event.body || '{}');
-        if (!pdfUrl) throw new Error('`pdfUrl` ontbreekt in de payload');
-        if (!pages)  throw new Error('`pages` ontbreekt in de payload');
-
-        // 2) PDF ophalen
-        const res = await fetch(pdfUrl);
-        if (!res.ok) throw new Error(`Kan PDF niet ophalen (status ${res.status})`);
-        const arrayBuffer = await res.arrayBuffer();
-
-        // 3) PDF laden en font embedden
-        const pdfDoc = await PDFDocument.load(arrayBuffer);
-        const font   = await pdfDoc.embedFont(StandardFonts.Helvetica);
-
-        // 4) pagina-ranges parsen
-        const ranges    = pages.split(',').map(r => r.trim());
-        const pageCount = pdfDoc.getPageCount();
-
-        // 5) tekst stempelen
-        for (const range of ranges) {
-            let [a, b] = range.split('-').map(n => parseInt(n, 10) - 1);
-            if (isNaN(a)) continue;
-            if (b === undefined) b = a;
-            if (a < 0 || b < 0 || a >= pageCount || b >= pageCount) {
-                console.warn(`Overslaan: pagina-range "${range}" ligt buiten 1–${pageCount}`);
-                continue;
+function parsePages(str) {
+    const pages = new Set();
+    str.split(',').forEach(part => {
+        const rangeMatch = part.match(/^(\d+)\s*-\s*(\d+)$/);
+        if (rangeMatch) {
+            const start = parseInt(rangeMatch[1], 10);
+            const end = parseInt(rangeMatch[2], 10);
+            if (start < 1 || end < start) {
+                throw new Error(`Invalid page range: "${part}"`);
             }
-            for (let i = a; i <= b; i++) {
-                const page = pdfDoc.getPage(i);
-                page.drawText(text, {
-                    x: 20,
-                    y: 20,
-                    size: 12,
-                    font,
-                });
+            for (let i = start; i <= end; i++) {
+                pages.add(i);
             }
+        } else {
+            const num = parseInt(part, 10);
+            if (isNaN(num) || num < 1) {
+                throw new Error(`Invalid page number: "${part}"`);
+            }
+            pages.add(num);
         }
+    });
+    return Array.from(pages).sort((a, b) => a - b);
+}
 
-        // 6) gewijzigde PDF serializen
-        const modifiedPdf = await pdfDoc.save();
-        const pdfBase64   = Buffer.from(modifiedPdf).toString('base64');
+exports.handler = async function(event) {
+    let body;
+    try {
+        body = JSON.parse(event.body);
+    } catch {
+        return {
+            statusCode: 400,
+            body: JSON.stringify({ error: 'Invalid JSON payload' })
+        };
+    }
 
-        // 7) return Base64
+    const { pdfUrl, text, pages } = body;
+    if (!pdfUrl || typeof pdfUrl !== 'string') {
+        return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid "pdfUrl"' }) };
+    }
+    if (!text || typeof text !== 'string') {
+        return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid "text"' }) };
+    }
+    if (!pages || typeof pages !== 'string') {
+        return { statusCode: 400, body: JSON.stringify({ error: 'Missing or invalid "pages"' }) };
+    }
+
+    let pageNumbers;
+    try {
+        pageNumbers = parsePages(pages);
+    } catch (err) {
+        return { statusCode: 400, body: JSON.stringify({ error: err.message }) };
+    }
+
+    try {
+        const response = await fetch(pdfUrl);
+        if (!response.ok) {
+            throw new Error(`Failed to download PDF (status ${response.status})`);
+        }
+        const pdfBytes = await response.arrayBuffer();
+        const pdfDoc = await PDFDocument.load(pdfBytes);
+        const allPages = pdfDoc.getPages();
+        const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+        pageNumbers.forEach(num => {
+            if (num < 1 || num > allPages.length) {
+                throw new Error(`Page number out of range: ${num}`);
+            }
+            const page = allPages[num - 1];
+            page.drawText(text, {
+                x: 50,
+                y: page.getHeight() - 50,
+                size: 12,
+                font
+            });
+        });
+
+        const modifiedPdfBytes = await pdfDoc.save();
+        const pdfBase64 = Buffer.from(modifiedPdfBytes).toString('base64');
         return {
             statusCode: 200,
-            body: JSON.stringify({ pdfBase64 }),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pdfBase64 })
         };
-
     } catch (err) {
         return {
-            statusCode: err.message.startsWith('`') ? 400 : 500,
-            body: JSON.stringify({ error: err.message }),
+            statusCode: 500,
+            body: JSON.stringify({ error: err.message })
         };
     }
 };
